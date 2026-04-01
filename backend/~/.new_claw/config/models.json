@@ -1,0 +1,22 @@
+{
+  "dialog": {
+    "default": "ollama",
+    "providers": {
+      "ollama": {
+        "api_url": "http://localhost:11434",
+        "api_key": "",
+        "model": "qwen3.5:9b"
+      }
+    }
+  },
+  "embedding": {
+    "default": "ollama",
+    "providers": {
+      "ollama": {
+        "api_url": "http://localhost:11434",
+        "api_key": "",
+        "model": "qwen3-embedding:0.6b"
+      }
+    }
+  }
+}

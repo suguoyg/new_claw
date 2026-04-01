@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../backend:/app
+      - new_claw_workspace:/root/.new_claw
+    environment:
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      - redis
+    networks:
+      - newclaw-network
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - newclaw-network
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - newclaw-network
+
+networks:
+  newclaw-network:
+    driver: bridge
+
+volumes:
+  new_claw_workspace:
+  redis_data:

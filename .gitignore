@@ -1,0 +1,28 @@
+# Dependencies
+frontend/node_modules/
+__pycache__/
+*.pyc
+*.pyo
+
+# Environment
+.env
+.env.local
+
+# Build outputs
+frontend/dist/
+backend/__pycache__/
+
+# IDE
+.vscode/settings.json
+
+# Logs
+*.log
+nohup.out
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary
+*.tmp
+*.swp

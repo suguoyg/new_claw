@@ -1,0 +1,32 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find /mnt/d/workspace/agent_workspace/new_claw -type f -name *.py -o -name *.ts -o -name *.vue -o -name *.json -o -name *.md -o -name *.sh -o -name *.yml -o -name *.txt -o -name *.css -o -name *.html)",
+      "Bash(python3 -m py_compile backend/main.py backend/utils/config.py backend/utils/websocket.py backend/utils/file_handler.py)",
+      "Bash(for f:*)",
+      "Bash(do python3:*)",
+      "Bash(echo \"Error in $f\")",
+      "Bash(done)",
+      "Bash(chmod +x scripts/*.sh)",
+      "Bash(bash scripts/init_workspace.sh)",
+      "Bash(pip list:*)",
+      "Bash(conda install:*)",
+      "Bash(curl -s http://localhost:8000/)",
+      "Bash(curl -s http://localhost:8000/docs)",
+      "Bash(curl -s -X POST http://localhost:8000/api/auth/register -H \"Content-Type: application/json\" -d '{\"\"\"\"username\"\"\"\":\"\"\"\"test\"\"\"\",\"\"\"\"password\"\"\"\":\"\"\"\"test123\"\"\"\"}')",
+      "Bash(pkill -f \"python main.py\")",
+      "Bash(pkill -f \"npm run dev\")",
+      "Bash(curl -s -X POST http://localhost:8000/api/auth/register -H \"Content-Type: application/json\" -d '{\"\"username\"\":\"\"test\"\",\"\"password\"\":\"\"test123\"\"}')",
+      "Bash(curl -s -X POST http://localhost:8000/api/auth/register -H \"Content-Type: application/json\" -d '{\"\"username\"\":\"\"testuser\"\",\"\"password\"\":\"\"test123\"\"}')",
+      "Bash(python -c \":*)",
+      "Bash(curl -s -X POST http://localhost:8000/api/auth/login -H \"Content-Type: application/json\" -d '{\"\"username\"\":\"\"testuser4\"\",\"\"password\"\":\"\"test123\"\"}')",
+      "Bash(curl -s -X GET http://localhost:8000/api/auth/me -H \"Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIwNTcyMzE1YS00YzQyLTRlYWMtODMwZi1hOTg1YzIyYTllZDEiLCJ1c2VybmFtZSI6InRlc3R1c2VyNCIsImV4cCI6MTc3NTM5MjExN30.Zo3jSyrbcpKZo6-H5NCVD3XBwVVXryYrK3OMakFglF8\")",
+      "Bash(curl -s -I http://localhost:8000/)",
+      "Read(//home/suguo/.new_claw/agents/**)",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIwNTcyMzE1YS00YzQyLTRlYWMtODMwZi1hOTg1YzIyYTllZDEiLCJ1c2VybmFtZSI6InRlc3R1c2VyNCIsImV4cCI6MTc3NTM5MjExN30.Zo3jSyrbcpKZo6-H5NCVD3XBwVVXryYrK3OMakFglF8\")",
+      "Bash(curl -s -X GET http://localhost:8000/api/agents -H \"Authorization: Bearer $TOKEN\")",
+      "Read(//home/suguo/.new_claw/config/**)",
+      "Bash(python -c \"from pathlib import Path; print\\(Path\\(''~/.new_claw/config/agents.json''\\).expanduser\\(\\)\\)\")"
+    ]
+  }
+}
