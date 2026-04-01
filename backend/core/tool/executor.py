@@ -19,6 +19,7 @@ class ToolExecutor:
         self.register("file_write", self._file_write)
         self.register("web_search", self._web_search)
         self.register("command_exec", self._command_exec)
+        self.register("load_skill_instructions", self._load_skill_instructions)
 
     def register(self, name: str, func: Callable):
         """Register a tool"""
@@ -422,6 +423,38 @@ class ToolExecutor:
             }
         except Exception as e:
             return {"error": str(e)}
+
+    async def _load_skill_instructions(self, params: dict) -> dict:
+        """Load skill instructions on-demand"""
+        skill_name = params.get("skill_name")
+        if not skill_name:
+            return {"error": "skill_name is required"}
+
+        # Build skill path
+        skill_path = Path(f"~/.new_claw/skills/{skill_name}").expanduser()
+        skill_md_path = skill_path / "SKILL.md"
+
+        if not skill_md_path.exists():
+            return {"error": f"Skill not found: {skill_name}"}
+
+        try:
+            with open(skill_md_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+
+            # Parse YAML frontmatter
+            instructions = content
+            if content.startswith('---'):
+                parts = content.split('---', 2)
+                if len(parts) >= 3:
+                    instructions = parts[2].strip()
+
+            return {
+                "skill_name": skill_name,
+                "instructions": instructions,
+                "path": str(skill_path)
+            }
+        except Exception as e:
+            return {"error": f"Failed to load skill: {str(e)}"}
 
 
 # Global executor instance

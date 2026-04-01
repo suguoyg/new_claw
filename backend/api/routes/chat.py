@@ -64,6 +64,20 @@ TOOL_DEFINITIONS = [
                 "required": ["command"]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "load_skill_instructions",
+            "description": "Load the full instructions for a specific skill. Call this when you determine a skill is needed based on user request. Returns the skill's execution instructions including scripts and workflow details.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "skill_name": {"type": "string", "description": "The name of the skill to load instructions for"}
+                },
+                "required": ["skill_name"]
+            }
+        }
     }
 ]
 
@@ -75,6 +89,8 @@ class ChatSession:
         self.pending_confirms: Dict[str, asyncio.Future] = {}
         # Store conversation history per session
         self.conversations: Dict[str, List[dict]] = {}
+        # Store loaded skill instructions cache per session
+        self.loaded_skills_cache: Dict[str, Dict[str, dict]] = {}
 
     async def process_message(self, websocket: WebSocket, message: dict, user_id: str):
         """Process incoming chat message"""
@@ -260,9 +276,9 @@ class ChatSession:
                             filepath = agent_path / filename
                             files[filename] = file_cache.get(filepath) or ""
 
-                        # Read enabled skill contents with metadata
+                        # Read enabled skill metadata (NOT full instructions)
                         enabled_skills = agent.get("enabled_skills", [])
-                        skill_contents = {}
+                        skill_metadata = {}
                         for skill_name in enabled_skills:
                             skill_path = Path(f"~/.new_claw/skills/{skill_name}").expanduser()
                             skill_md_path = skill_path / "SKILL.md"
@@ -270,8 +286,13 @@ class ChatSession:
 
                             content = file_cache.get(skill_md_path) or ""
 
-                            # Read skill config for name/description (from config.json or SKILL.md frontmatter)
-                            skill_meta = {"name": skill_name, "description": "", "content": content}
+                            # Read skill metadata (name, description, trigger) - NOT full instructions
+                            skill_meta = {
+                                "name": skill_name,
+                                "description": "",
+                                "trigger": "",
+                                "path": str(skill_path)
+                            }
 
                             # Try config.json first
                             if skill_config_path.exists():
@@ -280,6 +301,7 @@ class ChatSession:
                                         config = json.load(f)
                                         skill_meta["name"] = config.get("name", skill_name)
                                         skill_meta["description"] = config.get("description", "")
+                                        skill_meta["trigger"] = config.get("trigger", "")
                                 except Exception:
                                     pass
 
@@ -296,10 +318,12 @@ class ChatSession:
                                                     skill_meta["name"] = frontmatter.get("name", skill_name)
                                                 if not skill_meta["description"]:
                                                     skill_meta["description"] = frontmatter.get("description", "")
+                                                if not skill_meta["trigger"]:
+                                                    skill_meta["trigger"] = frontmatter.get("trigger", "")
                                         except Exception:
                                             pass
 
-                            skill_contents[skill_name] = skill_meta
+                            skill_metadata[skill_name] = skill_meta
 
                         return {
                             "provider": dialog_model.get("provider", "ollama"),
@@ -307,7 +331,7 @@ class ChatSession:
                             "files": files,
                             "enabled_tools": agent.get("enabled_tools", []),
                             "enabled_skills": enabled_skills,
-                            "skill_contents": skill_contents
+                            "skill_metadata": skill_metadata
                         }
         except Exception as e:
             print(f"Error loading agent config: {e}")
@@ -318,7 +342,7 @@ class ChatSession:
             "files": {},
             "enabled_tools": [],
             "enabled_skills": [],
-            "skill_contents": {}
+            "skill_metadata": {}
         }
 
     def _build_system_prompt(self, agent_config: dict, user_message: str) -> str:
@@ -354,33 +378,25 @@ class ChatSession:
                 else:
                     prompt_parts.append(f"\n### Tool: {tool_name}\n(Use built-in tool: {tool_name})")
 
-        # Add enabled skills with full content
+        # Add enabled skills with metadata only (NOT full instructions)
+        # Full instructions are loaded on-demand via load_skill_instructions tool
         enabled_skills = agent_config.get("enabled_skills", [])
-        skill_contents = agent_config.get("skill_contents", {})
+        skill_metadata = agent_config.get("skill_metadata", {})
         if enabled_skills:
-            prompt_parts.append("## Enabled Skills")
+            prompt_parts.append("## Available Skills")
+            prompt_parts.append("When user requests match a skill's trigger, call `load_skill_instructions(skill_name)` to get the full execution instructions.\n")
             for skill_name in enabled_skills:
-                skill_meta = skill_contents.get(skill_name, {})
+                skill_meta = skill_metadata.get(skill_name, {})
                 skill_name_display = skill_meta.get("name", skill_name)
                 skill_desc = skill_meta.get("description", "")
-                skill_content = skill_meta.get("content", "")
+                skill_trigger = skill_meta.get("trigger", "")
 
-                # Strip YAML frontmatter from content
-                if skill_content and skill_content.startswith("---"):
-                    parts = skill_content.split("---", 2)
-                    if len(parts) >= 3:
-                        skill_content = parts[2].strip()
-
-                prompt_parts.append(f"\n### Skill: {skill_name_display}")
+                prompt_parts.append(f"### Skill: {skill_name_display}")
                 if skill_desc:
                     prompt_parts.append(f"**Description**: {skill_desc}")
-                if skill_content:
-                    prompt_parts.append(f"\n{skill_content}")
-                else:
-                    prompt_parts.append(f"\n### Skill: {skill_name_display}")
-                    if skill_desc:
-                        prompt_parts.append(f"**Description**: {skill_desc}")
-                    prompt_parts.append(f"\n(Execute skill workflow: {skill_name})")
+                if skill_trigger:
+                    prompt_parts.append(f"**Trigger**: {skill_trigger}")
+                prompt_parts.append(f"**Action**: Call `load_skill_instructions(\"{skill_name}\")` when ready to execute")
 
         # Add TOOLS.md for additional tool info
         tools = files.get("TOOLS.md", "")
