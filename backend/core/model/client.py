@@ -68,6 +68,15 @@ class ModelClient:
         api_url = config.get("api_url", "https://api.openai.com")
         api_key = config.get("api_key", "")
 
+        payload = {
+            "model": model,
+            "messages": messages
+        }
+
+        # Add tools if provided (OpenAI function calling format)
+        if "tools" in kwargs:
+            payload["tools"] = kwargs["tools"]
+
         try:
             async with httpx.AsyncClient(timeout=60.0) as client:
                 response = await client.post(
@@ -76,16 +85,13 @@ class ModelClient:
                         "Authorization": f"Bearer {api_key}",
                         "Content-Type": "application/json"
                     },
-                    json={
-                        "model": model,
-                        "messages": messages
-                    }
+                    json=payload
                 )
 
                 if response.status_code == 200:
                     return response.json()
                 else:
-                    return {"error": f"HTTP {response.status_code}"}
+                    return {"error": f"HTTP {response.status_code}: {response.text}"}
 
         except Exception as e:
             return {"error": str(e)}
@@ -95,20 +101,26 @@ class ModelClient:
         config = self.config.get("dialog", {}).get("providers", {}).get("vllm", {})
         api_url = config.get("api_url", "http://localhost:8000")
 
+        payload = {
+            "model": model,
+            "messages": messages
+        }
+
+        # Add tools if provided (vLLM supports OpenAI function calling format)
+        if "tools" in kwargs:
+            payload["tools"] = kwargs["tools"]
+
         try:
             async with httpx.AsyncClient(timeout=60.0) as client:
                 response = await client.post(
                     f"{api_url}/v1/chat/completions",
-                    json={
-                        "model": model,
-                        "messages": messages
-                    }
+                    json=payload
                 )
 
                 if response.status_code == 200:
                     return response.json()
                 else:
-                    return {"error": f"HTTP {response.status_code}"}
+                    return {"error": f"HTTP {response.status_code}: {response.text}"}
 
         except Exception as e:
             return {"error": str(e)}

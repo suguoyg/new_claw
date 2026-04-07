@@ -19,17 +19,21 @@ router = APIRouter(prefix="/ws", tags=["websocket"])
 
 router = APIRouter(prefix="/ws", tags=["websocket"])
 
-# Tool definitions for LLM
+# Tool definitions for LLM (OpenAI function calling format)
+# These are sent to the LLM via the tools parameter and also used to build the prompt
 TOOL_DEFINITIONS = [
     {
         "type": "function",
         "function": {
             "name": "file_read",
-            "description": "Read the content of a file from the local filesystem",
+            "description": "Read the complete content of a file from the local filesystem. Use this when you need to examine existing file contents before making changes or to gather information.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "path": {"type": "string", "description": "The absolute path to the file to read"}
+                    "path": {
+                        "type": "string",
+                        "description": "The absolute path to the file to read (e.g., /home/user/project/file.txt)"
+                    }
                 },
                 "required": ["path"]
             }
@@ -39,12 +43,18 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "file_write",
-            "description": "Write content to a file, creating or overwriting the file",
+            "description": "Create a new file or overwrite an existing file with the specified content. Use this to create or update configuration files, code files, documentation, or any text-based files.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "path": {"type": "string", "description": "The absolute path to the file to write"},
-                    "content": {"type": "string", "description": "The content to write to the file"}
+                    "path": {
+                        "type": "string",
+                        "description": "The absolute path where the file should be created or written (e.g., /home/user/project/output.txt)"
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "The complete content to write to the file"
+                    }
                 },
                 "required": ["path", "content"]
             }
@@ -54,12 +64,19 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "command_exec",
-            "description": "Execute a system command and return the output",
+            "description": "Execute a shell command on the local system and return the output. Use this for running build scripts, git commands, npm/yarn/pip commands, or any terminal operations.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "command": {"type": "string", "description": "The command to execute"},
-                    "timeout": {"type": "integer", "description": "Timeout in seconds (default: 30)"}
+                    "command": {
+                        "type": "string",
+                        "description": "The shell command to execute (e.g., 'git status', 'npm install', 'python script.py')"
+                    },
+                    "timeout": {
+                        "type": "integer",
+                        "description": "Maximum time to wait for command completion in seconds. Default is 30 seconds. Set higher for long-running commands.",
+                        "default": 30
+                    }
                 },
                 "required": ["command"]
             }
@@ -68,12 +85,32 @@ TOOL_DEFINITIONS = [
     {
         "type": "function",
         "function": {
-            "name": "load_skill_instructions",
-            "description": "Load the full instructions for a specific skill. Call this when you determine a skill is needed based on user request. Returns the skill's execution instructions including scripts and workflow details.",
+            "name": "web_search",
+            "description": "Search the internet using multiple search providers (Baidu, Sogou, Bing). Returns a list of search results including title, URL, and summary for each result. Use this when you need current information, facts, or resources not available in your training data.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "skill_name": {"type": "string", "description": "The name of the skill to load instructions for"}
+                    "query": {
+                        "type": "string",
+                        "description": "The search query. Be specific and use keywords that match what you're looking for."
+                    }
+                },
+                "required": ["query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "load_skill_instructions",
+            "description": "Load the complete execution instructions for a specific skill when the user request matches a skill's trigger criteria. Skills provide specialized workflows, scripts, and detailed instructions for handling specific tasks. Always call this before executing a skill.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "skill_name": {
+                        "type": "string",
+                        "description": "The exact name of the skill to load (e.g., 'weather-zh', 'tavily', 'code-review')"
+                    }
                 },
                 "required": ["skill_name"]
             }
@@ -162,8 +199,8 @@ class ChatSession:
 
             # Call LLM with tools if enabled
             try:
-                # Filter tool definitions based on enabled tools
-                tools = [t for t in TOOL_DEFINITIONS if t["function"]["name"] in enabled_tools] if enabled_tools else TOOL_DEFINITIONS
+                # Filter tool definitions based on enabled tools (only pass enabled tools to LLM)
+                tools = [t for t in TOOL_DEFINITIONS if t["function"]["name"] in enabled_tools] if enabled_tools else []
 
                 if tools:
                     response = await client.chat(provider, model, messages, tools=tools)
@@ -261,78 +298,78 @@ class ChatSession:
     def _get_agent_config(self, agent_id: str) -> dict:
         """Get agent model configuration and files with caching"""
         try:
-            agents_file = Path("~/.new_claw/config/agents.json").expanduser()
-            if agents_file.exists():
-                with open(agents_file, 'r') as f:
-                    agents = json.load(f)
-                    if agent_id in agents:
-                        agent = agents[agent_id]
-                        dialog_model = agent.get("dialog_model", {})
+            # Use load_agents() which validates and fixes enabled_tools/enabled_skills
+            from api.routes.agent import load_agents
+            agents = load_agents()
 
-                        # Read agent files using cache
-                        agent_path = Path(f"~/.new_claw/agents/{agent_id}").expanduser()
-                        files = {}
-                        for filename in ["SOUL.md", "USER.md", "MEMORY.md", "TOOLS.md", "SKILL.md"]:
-                            filepath = agent_path / filename
-                            files[filename] = file_cache.get(filepath) or ""
+            if agent_id in agents:
+                agent = agents[agent_id]
+                dialog_model = agent.get("dialog_model", {})
 
-                        # Read enabled skill metadata (NOT full instructions)
-                        enabled_skills = agent.get("enabled_skills", [])
-                        skill_metadata = {}
-                        for skill_name in enabled_skills:
-                            skill_path = Path(f"~/.new_claw/skills/{skill_name}").expanduser()
-                            skill_md_path = skill_path / "SKILL.md"
-                            skill_config_path = skill_path / "config.json"
+                # Read agent files using cache
+                agent_path = Path(f"~/.new_claw/agents/{agent_id}").expanduser()
+                files = {}
+                for filename in ["SOUL.md", "USER.md", "MEMORY.md", "TOOLS.md", "SKILL.md"]:
+                    filepath = agent_path / filename
+                    files[filename] = file_cache.get(filepath) or ""
 
-                            content = file_cache.get(skill_md_path) or ""
+                # Read enabled skill metadata (NOT full instructions)
+                enabled_skills = agent.get("enabled_skills", [])
+                skill_metadata = {}
+                for skill_name in enabled_skills:
+                    skill_path = Path(f"~/.new_claw/skills/{skill_name}").expanduser()
+                    skill_md_path = skill_path / "SKILL.md"
+                    skill_config_path = skill_path / "config.json"
 
-                            # Read skill metadata (name, description, trigger) - NOT full instructions
-                            skill_meta = {
-                                "name": skill_name,
-                                "description": "",
-                                "trigger": "",
-                                "path": str(skill_path)
-                            }
+                    content = file_cache.get(skill_md_path) or ""
 
-                            # Try config.json first
-                            if skill_config_path.exists():
+                    # Read skill metadata (name, description, trigger) - NOT full instructions
+                    skill_meta = {
+                        "name": skill_name,
+                        "description": "",
+                        "trigger": "",
+                        "path": str(skill_path)
+                    }
+
+                    # Try config.json first
+                    if skill_config_path.exists():
+                        try:
+                            with open(skill_config_path, 'r', encoding='utf-8') as f:
+                                config = json.load(f)
+                                skill_meta["name"] = config.get("name", skill_name)
+                                skill_meta["description"] = config.get("description", "")
+                                skill_meta["trigger"] = config.get("trigger", "")
+                        except Exception:
+                            pass
+
+                    # Parse YAML frontmatter from SKILL.md if name/description still empty
+                    if not skill_meta["name"] or not skill_meta["description"]:
+                        if content.startswith("---"):
+                            parts = content.split("---", 2)
+                            if len(parts) >= 2:
                                 try:
-                                    with open(skill_config_path, 'r', encoding='utf-8') as f:
-                                        config = json.load(f)
-                                        skill_meta["name"] = config.get("name", skill_name)
-                                        skill_meta["description"] = config.get("description", "")
-                                        skill_meta["trigger"] = config.get("trigger", "")
+                                    import yaml
+                                    frontmatter = yaml.safe_load(parts[1])
+                                    if frontmatter:
+                                        if not skill_meta["name"]:
+                                            skill_meta["name"] = frontmatter.get("name", skill_name)
+                                        if not skill_meta["description"]:
+                                            skill_meta["description"] = frontmatter.get("description", "")
+                                        if not skill_meta["trigger"]:
+                                            skill_meta["trigger"] = frontmatter.get("trigger", "")
                                 except Exception:
                                     pass
 
-                            # Parse YAML frontmatter from SKILL.md if name/description still empty
-                            if not skill_meta["name"] or not skill_meta["description"]:
-                                if content.startswith("---"):
-                                    parts = content.split("---", 2)
-                                    if len(parts) >= 2:
-                                        try:
-                                            import yaml
-                                            frontmatter = yaml.safe_load(parts[1])
-                                            if frontmatter:
-                                                if not skill_meta["name"]:
-                                                    skill_meta["name"] = frontmatter.get("name", skill_name)
-                                                if not skill_meta["description"]:
-                                                    skill_meta["description"] = frontmatter.get("description", "")
-                                                if not skill_meta["trigger"]:
-                                                    skill_meta["trigger"] = frontmatter.get("trigger", "")
-                                        except Exception:
-                                            pass
+                    skill_metadata[skill_name] = skill_meta
 
-                            skill_metadata[skill_name] = skill_meta
-
-                        return {
-                            "provider": dialog_model.get("provider", "ollama"),
-                            "model": dialog_model.get("model_name", "qwen3.5:9b"),
-                            "files": files,
-                            "enabled_tools": agent.get("enabled_tools", []),
-                            "enabled_skills": enabled_skills,
-                            "skill_metadata": skill_metadata
-                        }
+                return {
+                    "provider": dialog_model.get("provider", "ollama"),
+                    "model": dialog_model.get("model_name", "qwen3.5:9b"),
+                    "files": files,
+                    "enabled_tools": agent.get("enabled_tools", []),
+                    "enabled_skills": enabled_skills,
+                    "skill_metadata": skill_metadata
+                }
         except Exception as e:
             print(f"Error loading agent config: {e}")
 
@@ -366,17 +403,30 @@ class ChatSession:
         if memory:
             prompt_parts.append("## Agent Memory\n" + memory)
 
-        # Add enabled tools and their full content
+        # Add enabled tools using TOOL_DEFINITIONS (source of truth for tool specs)
+        # Tools are also sent via OpenAI tools= parameter in the API call
         enabled_tools = agent_config.get("enabled_tools", [])
         if enabled_tools:
             prompt_parts.append("## Enabled Tools")
-            for tool_name in enabled_tools:
-                tool_path = Path(f"~/.new_claw/tools/{tool_name}/SKILL.md").expanduser()
-                tool_content = file_cache.get(tool_path)
-                if tool_content:
-                    prompt_parts.append(f"\n### Tool: {tool_name}\n{tool_content}")
-                else:
-                    prompt_parts.append(f"\n### Tool: {tool_name}\n(Use built-in tool: {tool_name})")
+            prompt_parts.append("You have access to the following tools. Use them when needed to fulfill user requests.\n")
+            for tool_def in TOOL_DEFINITIONS:
+                func = tool_def.get("function", {})
+                name = func.get("name", "")
+                if name in enabled_tools:
+                    desc = func.get("description", "")
+                    params = func.get("parameters", {})
+                    required = params.get("required", [])
+                    props = params.get("properties", {})
+
+                    prompt_parts.append(f"### {name}")
+                    prompt_parts.append(f"{desc}")
+                    if props:
+                        prompt_parts.append("**Parameters:**")
+                        for param_name, param_info in props.items():
+                            ptype = param_info.get("type", "string")
+                            pdesc = param_info.get("description", "")
+                            required_mark = " (required)" if param_name in required else " (optional)"
+                            prompt_parts.append(f"- `{param_name}` ({ptype}){required_mark}: {pdesc}")
 
         # Add enabled skills with metadata only (NOT full instructions)
         # Full instructions are loaded on-demand via load_skill_instructions tool
@@ -398,10 +448,7 @@ class ChatSession:
                     prompt_parts.append(f"**Trigger**: {skill_trigger}")
                 prompt_parts.append(f"**Action**: Call `load_skill_instructions(\"{skill_name}\")` when ready to execute")
 
-        # Add TOOLS.md for additional tool info
-        tools = files.get("TOOLS.md", "")
-        if tools:
-            prompt_parts.append("## Additional Tool Info\n" + tools)
+        # Note: TOOLS.md is deprecated. Tool definitions now come only from ## Enabled Tools section
 
         # Add SKILL.md for additional skill rules
         skill = files.get("SKILL.md", "")

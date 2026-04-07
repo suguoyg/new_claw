@@ -68,12 +68,69 @@ You are a helpful AI assistant.
 # Built-in tools (always available)
 BUILTIN_TOOLS = ["file_read", "file_write", "web_search", "command_exec"]
 
+def get_available_tools() -> set:
+    """Get set of all available tool names"""
+    from api.routes.tool import BUILTIN_TOOLS, list_tools as list_all_tools
+    # Built-in tools
+    available = set(BUILTIN_TOOLS.keys())
+    # Custom tools
+    for tool in list_all_tools():
+        available.add(tool["name"])
+    return available
+
+def get_available_skills() -> set:
+    """Get set of all available skill names"""
+    from api.routes.skill import load_skills
+    skills = load_skills()
+    return {s["name"] for s in skills}
+
+def validate_and_fix_agent(agent_id: str, agent_data: dict) -> tuple[dict, list, list]:
+    """
+    Validate and fix agent's enabled_skills and enabled_tools.
+    Returns (fixed_agent_data, removed_skills, removed_tools)
+    """
+    available_tools = get_available_tools()
+    available_skills = get_available_skills()
+
+    removed_skills = []
+    removed_tools = []
+
+    # Validate enabled_tools
+    if "enabled_tools" in agent_data:
+        valid_tools = [t for t in agent_data["enabled_tools"] if t in available_tools]
+        removed_tools = [t for t in agent_data["enabled_tools"] if t not in available_tools]
+        agent_data["enabled_tools"] = valid_tools
+
+    # Validate enabled_skills
+    if "enabled_skills" in agent_data:
+        valid_skills = [s for s in agent_data["enabled_skills"] if s in available_skills]
+        removed_skills = [s for s in agent_data["enabled_skills"] if s not in available_skills]
+        agent_data["enabled_skills"] = valid_skills
+
+    return agent_data, removed_skills, removed_tools
+
 def load_agents() -> dict:
-    """Load agents from file"""
-    if AGENTS_FILE_PATH.exists():
-        with open(AGENTS_FILE_PATH, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    return {}
+    """Load agents from file and validate skills/tools"""
+    if not AGENTS_FILE_PATH.exists():
+        return {}
+
+    with open(AGENTS_FILE_PATH, 'r', encoding='utf-8') as f:
+        agents = json.load(f)
+
+    # Validate and fix each agent's config
+    needs_save = False
+    for agent_id, agent_data in agents.items():
+        fixed_data, removed_skills, removed_tools = validate_and_fix_agent(agent_id, agent_data.copy())
+        if removed_skills or removed_tools:
+            agents[agent_id] = fixed_data
+            needs_save = True
+            print(f"[Agent Config] {agent_id}: removed invalid skills={removed_skills}, tools={removed_tools}")
+
+    # Save back if any invalid configs were removed
+    if needs_save:
+        save_agents(agents)
+
+    return agents
 
 def save_agents(agents: dict):
     """Save agents to file"""
